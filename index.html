@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="fr">
+    <head>
+        <title>iceWalker</title>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <link href="style.css" rel="stylesheet">
+        <link rel="stylesheet" href="https://pyscript.net/latest/pyscript.css" />
+        <script defer src="https://pyscript.net/latest/pyscript.js"></script>
+        <py-config>
+            packages = ["Pillow"]
+            [[fetch]]
+            files = ["iceWalker_graphique.py", "iceWalker_logique.py"]
+            [[fetch]]
+            from = "pictures/planches/"
+            to_folder = "./"
+            files = ["personnages.png", "poissons.png"]
+            [[fetch]]
+            from = "labyrinthes/"
+            to_folder = "./"
+            files = ["laby0.csv", "personnages0.csv", "dimensions0.csv"]   
+            [[fetch]]    
+            from = "pictures/" 
+            to_folder = "./"
+            files = ["fleches.png"]
+        </py-config>
+    </head>
+    <body>
+    <h1>Ice Walker Seal</h1>
+    <div id="plateauJeu"></div>       
+    <table id="deplacer">
+        <tr>
+            <td></td>
+            <td><img src="" id="haut" py-click="avancer('N')"></td>
+            <td></td>
+        </tr>
+        <tr>
+            <td><img src="" id="gauche" py-click="avancer('O')"></td>
+            <td><img src="" id="hero"></td>
+            <td><img src="" id="droite" py-click="avancer('E')"></td>
+        </tr>
+        <tr>
+            <td></td>
+            <td><img src="" id="bas" py-click="avancer('S')"></td>
+            <td></td>
+        </tr>
+    </table>
+    <div id="donnees"></div>
+    <div id="personnages"></div>
+    <div id="gagne"></div>
+    <py-script>
+        from iceWalker_graphique import *
+        from js import document, setInterval, clearInterval
+        from pyodide.ffi import create_proxy
+        import asyncio
+        
+
+        ################################
+        # Initialisation des variables #
+        ################################
+
+        hero_compteur = 0
+        poisson_compteur = 0
+        personnages_csv = "personnages0.csv"
+        labyrinthe_csv = "laby0.csv"
+        dimensions_csv = "dimensions0.csv"
+        planche_personnages = "personnages.png"
+        planche_poisson = "poissons.png"
+        planche_fleches = "fleches.png"
+        vitesse_animation = 300
+        personnage_width = 48
+        personnage_height = 48
+        poisson_width = 48
+        poisson_height = 48
+        fleche_width = 243
+        fleche_height = 243
+
+        grille_iceWalker(10, 10)
+        personnages = personnages(personnages_csv)
+        dico_murs = labyrinthe(labyrinthe_csv) 
+        dimensions_labyrinthe = dimensions(dimensions_csv)
+        mur_enceinte()               
+        dessin_murs(dico_murs)
+        controle = True
+     
+        # document.getElementById("donnees").innerHTML = dimensions_labyrinthe
+        # document.getElementById("personnages").innerHTML = personnages
+
+        ################################
+        ## Les flêches de directions ###
+        ################################
+
+        # Image de la balise <img src="" id="hero">
+        hero = dessin_base64(planche_personnages, (personnage_width, 0, personnage_width*2, personnage_width))
+        # Les images des flêches de direction de la planche "fleches.png"
+        haut = dessin_base64(planche_fleches, (0, fleche_height, fleche_width, fleche_height*2))
+        droite = dessin_base64(planche_fleches, (0, 0, fleche_width, fleche_height))
+        gauche = dessin_base64(planche_fleches, (fleche_width, fleche_height, fleche_width*2, fleche_height*2))
+        bas = dessin_base64(planche_fleches, (fleche_width, 0, fleche_width*2, fleche_height))
+
+
+        # Mise à jour de l'attribut src de la balise imd d'id "hero"
+        document.getElementById("hero").src = hero
+        document.getElementById("haut").src = haut
+        document.getElementById("droite").src = droite
+        document.getElementById("gauche").src = gauche
+        document.getElementById("bas").src = bas
+
+        async def avancer(direction='S', vitesse = 0.3): 
+                global hero_setInterval, controle, poisson_setInterval     
+                glisser = True                
+                if controle: 
+                    clearInterval(hero_setInterval)                                    
+                    while glisser :
+                        controle = False 
+                        await asyncio.sleep(vitesse)                                               
+                        cellule_precedente =  document.getElementById(f"cellule{personnages['0'][0]}_{personnages['0'][1]}")
+                        cellule_precedente.style.backgroundImage = f'url(pictures/tuile.png)'                                      
+                        glisser = mouvement(personnages, dico_murs, direction, dimensions_labyrinthe)
+                        if direction == 'S':
+                            hero = dessin_base64(planche_personnages, (personnage_width, 0, personnage_width*2, personnage_height))
+                        elif direction == 'O':
+                            hero = dessin_base64(planche_personnages, (personnage_width, personnage_height, personnage_width*2, personnage_height*2))
+                        elif direction == 'E':
+                            hero = dessin_base64(planche_personnages, (personnage_width, personnage_height*2, personnage_width*2, personnage_height*3))
+                        elif direction == 'N':
+                            hero = dessin_base64(planche_personnages, (personnage_width, personnage_height*3, personnage_width*2, personnage_height*4))                 
+                        dessiner_personnage('0', hero, personnages)                                                                   
+                    hero_setInterval = setInterval(personnage_animation_proxy, vitesse_animation)
+                controle = True
+                if gagne(personnages):
+                    controle = False
+                    clearInterval(poisson_setInterval)
+                    # clearInterval(hero_setInterval)
+                    # hero_final_setInterval = setInterval(personnage_animation_final_proxy, vitesse_animation)
+                         
+             
+        def hero_animation():
+            global hero_compteur
+            hero = dessin_base64(planche_personnages, (personnage_width*hero_compteur, 0, personnage_width*(hero_compteur + 1), personnage_height))                      
+            dessiner_personnage('0', hero, personnages) 
+            hero_compteur = (hero_compteur + 1) % 3
+
+        def hero_animation_final():
+            global hero_compteur
+            hero = dessin_base64(planche_personnages, (personnage_width*hero_compteur, 0, personnage_width*(hero_compteur + 1), personnage_height))                      
+            dessiner_personnage('0', hero, personnages) 
+            hero_compteur = (hero_compteur + 1) % 3
+
+        def poisson_animation(*parametres):
+            global poisson_compteur
+            poisson = dessin_base64(planche_poisson, (poisson_compteur*poisson_width+ parametres[0]*poisson_width, poisson_height*parametres[1], poisson_width*(poisson_compteur+ 1)+ parametres[0]*poisson_width, poisson_height*(parametres[1] + 1)))         
+            dessiner_personnage('1', poisson, personnages, False) 
+            poisson_compteur = (poisson_compteur + 1) % 3
+        
+        personnage_animation_proxy = create_proxy(hero_animation)
+        hero_setInterval = setInterval(personnage_animation_proxy, vitesse_animation)
+
+        personnage_animation_final_proxy = create_proxy(hero_animation_final)        
+
+        poisson_animation_proxy = create_proxy(poisson_animation)
+        poisson_setInterval = setInterval(poisson_animation_proxy, vitesse_animation, 9, 5)
+      
+    </py-script>    
+    </body>
+</html>
